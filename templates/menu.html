@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UCE Explorer - Menú Principal</title>
+    <link href="https://fonts.googleapis.com/css?family=Press+Start+2P" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Press Start 2P', cursive;
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #0b132b;
+            background-image: url("{{ url_for('static', filename='fondo_menu_limpio.jpg') }}");
+            background-size: cover;
+            background-position: center;
+            overflow: hidden;
+        }
+
+        .menu-panel {
+            background-color: #111111;
+            border: 4px solid #1a1a1a;
+            border-radius: 8px;
+            padding: 2rem;
+            width: 400px;
+            text-align: center;
+            box-shadow: 0px 0px 20px rgba(0, 0, 0, 0.9);
+            margin-top: 180px; 
+            z-index: 10;
+        }
+
+        .player-greeting {
+            color: #ffcc00; 
+            font-size: 1.2rem;
+            margin-bottom: 2rem;
+            line-height: 1.5;
+            text-shadow: 2px 2px 0px #000;
+        }
+
+        .menu-btn {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            padding: 15px;
+            margin-bottom: 15px;
+            font-family: 'Press Start 2P', cursive;
+            font-size: 0.9rem;
+            text-decoration: none;
+            border: 4px solid #000;
+            box-sizing: border-box;
+            transition: transform 0.1s;
+            cursor: pointer;
+        }
+
+        .menu-btn:active { transform: scale(0.95); }
+        .btn-icon { margin-right: 15px; font-size: 1.2rem; }
+
+        .btn-explorar { background-color: #92d050; color: white; }
+        .btn-personajes { background-color: #33b1ff; color: white; }
+        .btn-logros { background-color: #ffcc00; color: black; margin-bottom: 0; }
+
+        .modal-overlay {
+            display: none; 
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-color: #031326; 
+            z-index: 100;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            background-image: 
+                radial-gradient(rgba(255, 255, 255, 0.05) 2px, transparent 2px),
+                radial-gradient(rgba(255, 255, 255, 0.02) 2px, transparent 2px);
+            background-size: 30px 30px, 40px 40px;
+            background-position: 0 0, 15px 15px;
+        }
+
+        .modal-title {
+            font-size: 2.2rem;
+            margin-bottom: 40px;
+            text-align: center;
+            background: linear-gradient(180deg, #ffffff 0%, #ffcc00 50%, #ff9900 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(4px 4px 0px #000) drop-shadow(-2px -2px 0px #000) drop-shadow(2px -2px 0px #000);
+            line-height: 1.4;
+        }
+
+        .modal-title span {
+            font-size: 1.2rem;
+            color: #fff;
+            -webkit-text-fill-color: #fff;
+            display: block;
+            margin-bottom: 10px;
+        }
+
+        /* --- CSS DE LOS PERSONAJES --- */
+        .char-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 25px;
+            width: 900px;
+            max-width: 95vw;
+        }
+
+        .char-card {
+            position: relative;
+            border: 6px solid #000;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: transform 0.2s, border-color 0.2s;
+            height: 280px; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: inset 0px 0px 20px rgba(0,0,0,0.5), 8px 8px 0px rgba(0,0,0,0.6);
+            text-decoration: none;
+        }
+
+        .char-card:hover { transform: translateY(-10px) scale(1.05); border-color: #fff; }
+        .char-card img { max-height: 220px; max-width: 90%; image-rendering: pixelated; filter: drop-shadow(4px 4px 0px rgba(0,0,0,0.4)); margin-bottom: 25px; }
+
+        .char-label {
+            position: absolute; bottom: -10px; left: 50%; transform: translateX(-50%); border: 4px solid #000; border-radius: 6px; padding: 8px 10px; font-size: 0.7rem; color: white; white-space: nowrap; box-shadow: 4px 4px 0px rgba(0,0,0,0.5);
+        }
+
+        .bg-1 { background: linear-gradient(135deg, #ff3366, #990033); border-color: #ff9900; }
+        .bg-1 .char-label { background-color: #cc0033; }
+        .bg-2 { background: linear-gradient(135deg, #33b1ff, #005599); border-color: #33b1ff; }
+        .bg-2 .char-label { background-color: #0066cc; }
+        .bg-3 { background: linear-gradient(135deg, #66cc33, #116611); border-color: #66cc33; }
+        .bg-3 .char-label { background-color: #228b22; }
+        .bg-4 { background: linear-gradient(135deg, #ff9900, #994400); border-color: #ffcc00; }
+        .bg-4 .char-label { background-color: #cc6600; }
+        .bg-5 { background: linear-gradient(135deg, #9933cc, #330066); border-color: #cc66ff; }
+        .bg-5 .char-label { background-color: #660099; }
+        .bg-6 { background: linear-gradient(135deg, #ffcc00, #997a00); border-color: #ffff66; }
+        .bg-6 .char-label { background-color: #b38600; }
+
+        .char-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-image: radial-gradient(rgba(255, 255, 255, 0.2) 2px, transparent 2px); background-size: 12px 12px; pointer-events: none; border-radius: 6px; }
+
+        .close-btn {
+            margin-top: 50px; padding: 15px 30px; background-color: #ff3366; color: white; font-family: 'Press Start 2P', cursive; font-size: 1rem; border: 4px solid #000; border-radius: 8px; cursor: pointer; box-shadow: 4px 4px 0px rgba(0,0,0,0.8); transition: transform 0.1s;
+        }
+
+        .close-btn:active { transform: translate(4px, 4px); box-shadow: 0px 0px 0px #000; }
+
+        /* --- CSS NUEVO DE LA PANTALLA DE LOGROS --- */
+        .logros-container {
+            width: 80%;
+            max-width: 600px;
+            max-height: 50vh;
+            overflow-y: auto;
+            background-color: #111;
+            border: 4px solid #ffcc00;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            box-shadow: 10px 10px 0px rgba(0,0,0,0.7);
+        }
+
+        .logro-item {
+            background: linear-gradient(90deg, #332200, #111);
+            border-left: 5px solid #ffcc00;
+            padding: 15px;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            font-size: 0.8rem;
+            line-height: 1.4;
+        }
+
+        .logro-icon { font-size: 1.5rem; margin-right: 15px; }
+
+        #inline-loading-box {
+            display: none; background-color: #e0e0e0; border: 4px solid #000000; border-radius: 4px; padding: 15px; margin-top: 20px; text-align: left; box-shadow: inset 4px 4px 0px rgba(0,0,0,0.2);
+        }
+        .terminal-text { color: #000000; font-size: 0.65rem; line-height: 2; }
+        .cursor { display: inline-block; width: 8px; height: 12px; background-color: #000000; animation: blink 1s step-end infinite; vertical-align: middle; margin-left: 5px; }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+    </style>
+</head>
+<body>
+
+    <!-- REPRODUCTOR DE MÚSICA DE FONDO -->
+    <audio id="bg-music" autoplay loop>
+        <source src="{{ url_for('static', filename='Save_Point_Afternoon.mp3') }}" type="audio/mpeg">
+    </audio>
+
+    <!-- MENÚ PRINCIPAL -->
+    <div class="menu-panel" id="main-menu">
+        <div class="player-greeting">BIENVENIDO<br>{{ jugador|upper }}</div>
+
+        <a href="{{ url_for('mapa', jugador=jugador, avatar='char1.png') }}" class="menu-btn btn-explorar" onclick="iniciarCarga(event, this.href)">
+            <span class="btn-icon">▶</span> EXPLORAR CAMPUS
+        </a>
+
+        <button onclick="abrirModal()" class="menu-btn btn-personajes">
+            <span class="btn-icon">👾</span> PERSONAJES
+        </button>
+
+        <!-- SE MODIFICÓ PARA ABRIR LA PANTALLA DE LOGROS -->
+        <button onclick="abrirLogros()" class="menu-btn btn-logros">
+            <span class="btn-icon">🏆</span> LOGROS
+        </button>
+
+        <div id="inline-loading-box">
+            <span class="terminal-text" id="inline-loading-text"></span><span class="cursor"></span>
+        </div>
+    </div>
+
+    <!-- PANTALLA COMPLETA DE PERSONAJES -->
+    <div id="selectorModal" class="modal-overlay">
+        <div class="modal-title"><span>ELIGE A TU</span>PERSONAJE UCE</div>
+        <div class="char-grid">
+            <a href="{{ url_for('mapa', jugador=jugador, avatar='char1.png') }}" class="char-card bg-1" onclick="iniciarCarga(event, this.href)">
+                <img src="{{ url_for('static', filename='char1.png') }}" alt="Char 1">
+                <div class="char-label">📖 ESTUDIANTE</div>
+            </a>
+            <a href="{{ url_for('mapa', jugador=jugador, avatar='char2.png') }}" class="char-card bg-2" onclick="iniciarCarga(event, this.href)">
+                <img src="{{ url_for('static', filename='char2.png') }}" alt="Char 2">
+                <div class="char-label">📖 ESTUDIANTE</div>
+            </a>
+            <a href="{{ url_for('mapa', jugador=jugador, avatar='char3.png') }}" class="char-card bg-3" onclick="iniciarCarga(event, this.href)">
+                <img src="{{ url_for('static', filename='char3.png') }}" alt="Char 3">
+                <div class="char-label">📗 PROFESOR</div>
+            </a>
+            <a href="{{ url_for('mapa', jugador=jugador, avatar='char4.png') }}" class="char-card bg-4" onclick="iniciarCarga(event, this.href)">
+                <img src="{{ url_for('static', filename='char4.png') }}" alt="Char 4">
+                <div class="char-label">📝 DOCENTE</div>
+            </a>
+            <a href="{{ url_for('mapa', jugador=jugador, avatar='char5.png') }}" class="char-card bg-5" onclick="iniciarCarga(event, this.href)">
+                <img src="{{ url_for('static', filename='char5.png') }}" alt="Char 5">
+                <div class="char-label">🏛️ DECANO</div>
+            </a>
+            <a href="{{ url_for('mapa', jugador=jugador, avatar='char6.png') }}" class="char-card bg-6" onclick="iniciarCarga(event, this.href)">
+                <img src="{{ url_for('static', filename='char6.png') }}" alt="Char 6">
+                <div class="char-label">👑 DIRECTORA</div>
+            </a>
+        </div>
+        <button onclick="cerrarModal()" class="close-btn">X VOLVER</button>
+    </div>
+
+    <!-- NUEVA PANTALLA DE LOGROS -->
+    <div id="logrosModal" class="modal-overlay">
+        <div class="modal-title"><span>TUS</span>LOGROS DESBLOQUEADOS</div>
+        
+        <div class="logros-container" id="lista-logros">
+            <!-- Los logros se cargarán aquí por JavaScript -->
+        </div>
+
+        <button onclick="cerrarLogros()" class="close-btn">X VOLVER</button>
+    </div>
+
+    <script>
+        document.body.addEventListener('click', function() {
+            const music = document.getElementById('bg-music');
+            if (music.paused) { music.play(); }
+        }, { once: true });
+
+        function abrirModal() { document.getElementById('selectorModal').style.display = 'flex'; }
+        function cerrarModal() { document.getElementById('selectorModal').style.display = 'none'; }
+
+        // --- LÓGICA DE LA PANTALLA DE LOGROS ---
+        function abrirLogros() {
+            document.getElementById('logrosModal').style.display = 'flex';
+            
+            // Lee los datos guardados en la memoria del navegador
+            let logrosGuardados = JSON.parse(localStorage.getItem('logros_uce')) || [];
+            let contenedorLogros = document.getElementById('lista-logros');
+            
+            contenedorLogros.innerHTML = ''; // Limpia la lista
+            
+            if(logrosGuardados.length === 0) {
+                contenedorLogros.innerHTML = '<div style="color:white; text-align:center; padding:20px; font-size: 0.8rem; line-height: 1.5;">Aún no has explorado ninguna facultad.<br><br>¡Ve al campus y descubre nuevos lugares!</div>';
+            } else {
+                // Muestra un contador de exploración (21 es el número total de edificios en tu mapa)
+                let contador = document.createElement('div');
+                contador.style.color = '#ffcc00';
+                contador.style.textAlign = 'center';
+                contador.style.marginBottom = '15px';
+                contador.style.fontSize = '0.9rem';
+                contador.innerText = `EXPLORADAS: ${logrosGuardados.length} / 21`;
+                contenedorLogros.appendChild(contador);
+
+                // Genera las cajitas visuales por cada logro
+                logrosGuardados.forEach(logro => {
+                    let divItem = document.createElement('div');
+                    divItem.className = 'logro-item';
+                    divItem.innerHTML = `<span class="logro-icon">🏆</span> Explorador: <br><br> ${logro.nombre}`;
+                    contenedorLogros.appendChild(divItem);
+                });
+            }
+        }
+
+        function cerrarLogros() {
+            document.getElementById('logrosModal').style.display = 'none';
+        }
+
+        // --- LÓGICA DE LA PANTALLA DE CARGA INTEGRADA ---
+        function iniciarCarga(event, urlTarget) {
+            event.preventDefault();
+            document.getElementById('selectorModal').style.display = 'none';
+
+            const loadingBox = document.getElementById('inline-loading-box');
+            const loadingText = document.getElementById('inline-loading-text');
+            loadingBox.style.display = 'block';
+
+            const botones = document.querySelectorAll('.menu-btn');
+            botones.forEach(btn => {
+                btn.style.pointerEvents = 'none';
+                btn.style.opacity = '0.7';
+            });
+
+            const mensajes = [
+                "> Validando credenciales...",
+                "> Conectando servidor UCE...",
+                "> Analizando módulos IA...",
+                "> Renderizando entorno...",
+                "> ACCESO CONCEDIDO."
+            ];
+
+            let indice = 0;
+            loadingText.innerHTML = mensajes[indice] + "<br>";
+
+            const intervalo = setInterval(() => {
+                indice++;
+                if (indice < mensajes.length) {
+                    loadingText.innerHTML += mensajes[indice] + "<br>";
+                } else {
+                    clearInterval(intervalo);
+                    setTimeout(() => {
+                        window.location.href = urlTarget;
+                    }, 800);
+                }
+            }, 800); 
+        }
+    </script>
+</body>
+</html>

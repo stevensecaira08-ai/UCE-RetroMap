@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapa UCE - Exploración</title>
+    <link href="https://fonts.googleapis.com/css?family=Press+Start+2P" rel="stylesheet">
+    <link href="https://unpkg.com/nes.css@latest/css/nes.min.css" rel="stylesheet" />
+    <style>
+        body { font-family: 'Press Start 2P', cursive; margin: 0; overflow: hidden; background-color: #000; }
+        
+        .hud-header { position: absolute; top: 0; left: 0; width: 100%; padding: 15px; background-color: rgba(10, 17, 40, 0.9); border-bottom: 4px solid #5bc0be; text-align: center; color: white; z-index: 10; display: flex; justify-content: space-between; box-sizing: border-box; }
+        .hud-info { font-size: 0.8rem; }
+        .hud-location { color: #ffb703; font-size: 0.9rem; }
+        
+        #interaction-prompt { position: absolute; top: 80px; left: 50%; transform: translateX(-50%); background-color: rgba(0, 0, 0, 0.9); border: 2px solid #00ff00; color: #00ff00; padding: 10px 20px; font-size: 0.8rem; border-radius: 5px; display: none; z-index: 10; text-align: center; }
+        
+        #gameCanvas { display: block; }
+
+        /* CONTENEDOR DE FICHA (IMAGEN ÚNICA AL COSTADO DERECHO) */
+        #info-panel { 
+            position: absolute; top: 50%; right: 40px; transform: translateY(-50%); display: none; z-index: 20; text-align: center;
+        }
+
+        .ficha-img {
+            max-height: 85vh; width: auto; image-rendering: pixelated; filter: drop-shadow(10px 10px 0px rgba(0,0,0,0.7)); cursor: pointer; transition: transform 0.1s ease-in-out;
+        }
+
+        .ficha-img:active { transform: scale(0.98); }
+
+        /* RECUADRO DORADO DE LOGRO */
+        #achievement-popup {
+            position: fixed; bottom: -100px; right: 40px; background: linear-gradient(135deg, #ffd700, #b8860b);
+            border: 4px solid #fff; color: #000; padding: 15px 25px; z-index: 1000;
+            transition: bottom 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 0px 0px 20px rgba(255, 215, 0, 0.8); border-radius: 8px;
+            text-align: center; display: flex; align-items: center; gap: 15px;
+        }
+
+        #achievement-popup.show { bottom: 30px; }
+
+        .achievement-icon { font-size: 2rem; }
+        .achievement-text-main { font-size: 0.7rem; font-weight: bold; margin-bottom: 5px; color: #fff; text-shadow: 2px 2px 0px #000; }
+        .achievement-text-sub { font-size: 0.6rem; color: #000; }
+
+        /* --- NUEVO: BOTÓN DE AUDIO (MUTE) --- */
+        .mute-btn {
+            position: absolute;
+            top: 70px; /* Se ubica justo debajo de la barra superior */
+            right: 20px;
+            background-color: #0a1128;
+            color: white;
+            border: 3px solid #5bc0be;
+            border-radius: 5px;
+            padding: 10px;
+            font-size: 1.2rem;
+            cursor: pointer;
+            z-index: 15;
+            box-shadow: 4px 4px 0px rgba(0,0,0,0.7);
+            transition: transform 0.1s, border-color 0.1s;
+        }
+
+        .mute-btn:hover {
+            border-color: #ffb703;
+        }
+
+        .mute-btn:active {
+            transform: translate(2px, 2px);
+            box-shadow: 2px 2px 0px rgba(0,0,0,0.7);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- REPRODUCTOR DE MÚSICA DE FONDO DEL MAPA EN BUCLE -->
+    <audio id="bg-music" autoplay loop>
+        <source src="{{ url_for('static', filename='Overworld_Afternoon.mp3') }}" type="audio/mpeg">
+    </audio>
+
+    <div class="hud-header">
+        <div class="hud-info">JUGADOR: <span style="color: #33b1ff;">{{ jugador|upper }}</span></div>
+        <div class="hud-location" id="location-text">CAMPUS CENTRAL UCE</div>
+        <div class="hud-info" id="controls-text">W A S D: Moverse</div>
+    </div>
+
+    <!-- BOTÓN FLOTANTE PARA CONTROLAR EL AUDIO -->
+    <button id="mute-btn" class="mute-btn" title="Silenciar / Activar Música">🔊</button>
+
+    <div id="interaction-prompt">¡Estás cerca! Presiona E para entrar</div>
+
+    <!-- FICHA INTERACTIVA -->
+    <div id="info-panel">
+        <img id="panel-ficha-img" class="ficha-img" src="" alt="Ficha Informativa" onclick="cerrarPanel()" title="Haz clic en la imagen o presiona ESC para cerrar">
+    </div>
+
+    <!-- POPUP DEL LOGRO -->
+    <div id="achievement-popup">
+        <div class="achievement-icon">🏆</div>
+        <div>
+            <div class="achievement-text-main">LOGRO DESBLOQUEADO</div>
+            <div class="achievement-text-sub" id="achievement-name">Explorador UCE</div>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        // Forzar el inicio de la música si el navegador la bloquea al principio
+        document.body.addEventListener('click', function() {
+            const music = document.getElementById('bg-music');
+            if (music.paused && !music.muted) { music.play(); }
+        }, { once: true });
+
+        // --- LÓGICA DEL BOTÓN DE MUTE ---
+        const muteBtn = document.getElementById('mute-btn');
+        muteBtn.addEventListener('click', (e) => {
+            e.stopPropagation(); // Evita que el clic se propague al resto del juego
+            const music = document.getElementById('bg-music');
+            
+            if (music.muted || music.paused) {
+                music.muted = false;
+                music.play();
+                muteBtn.innerText = '🔊';
+            } else {
+                music.muted = true;
+                muteBtn.innerText = '🔇';
+            }
+        });
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const locationText = document.getElementById('location-text');
+        const controlsText = document.getElementById('controls-text');
+        const promptUI = document.getElementById('interaction-prompt');
+        const infoPanel = document.getElementById('info-panel');
+
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        const mapaGiganteImg = new Image();
+        mapaGiganteImg.src = "{{ url_for('static', filename='mapa_gigante.jpg') }}";
+
+        const avatarImg = new Image();
+        avatarImg.src = "{{ url_for('static', filename=avatar) }}";
+
+        let estadoJuego = 'mundo'; 
+        let memoriaX = 0; 
+        let memoriaY = 0;
+
+        const jugador = { x: 2300, y: 700, velocidad: 2.0, width: 150, height: 130 };
+        let mirandoIzquierda = false; 
+
+        // SISTEMA DE PARTÍCULAS AMBIENTALES
+        const particulas = [];
+        const numParticulas = 60; 
+
+        for (let i = 0; i < numParticulas; i++) {
+            particulas.push({
+                x: Math.random() * window.innerWidth,
+                y: Math.random() * window.innerHeight,
+                tamano: Math.random() * 3 + 1, 
+                velY: Math.random() * 0.5 + 0.2, 
+                velX: (Math.random() - 0.5) * 0.5, 
+                opacidad: Math.random() * 0.15 + 0.05 
+            });
+        }
+
+        // BASE DE DATOS DE EDIFICIOS
+        const edificios = [
+            {
+                id: "jurisprudencia", nombre: "Facultad de Jurisprudencia",
+                xPorcentaje: 91, yPorcentaje: 53, radius: 250,     
+                interiorImgSrc: "{{ url_for('static', filename='jurisprudencia.jpg') }}",
+                escalaInterior: 1.5, limiteMinX: 50, limiteMaxX: 3000, limiteMinY: 100, limiteMaxY: 3000, spawnX: 600, spawnY: 800,
+                imagenFicha: "{{ url_for('static', filename='ficha_jurisprudencia.jpg') }}"
+            },
+            {
+                id: "filosofia", nombre: "Facultad Filosofía y Letras",
+                xPorcentaje: 78, yPorcentaje: 42, radius: 250,
+                interiorImgSrc: "{{ url_for('static', filename='filosofia.jpg') }}", 
+                escalaInterior: 1.5, limiteMinX: 50, limiteMaxX: 3000, limiteMinY: 100, limiteMaxY: 3000, spawnX: 650, spawnY: 1000,
+                imagenFicha: "{{ url_for('static', filename='ficha_filosofia.jpg') }}"
+            },
+            {
+                id: "sociales", nombre: "Facultad Ciencias Sociales",
+                xPorcentaje: 88, yPorcentaje: 73, radius: 250,
+                interiorImgSrc: "{{ url_for('static', filename='sociales.jpg') }}", 
+                escalaInterior: 1.5, limiteMinX: 50, limiteMaxX: 3000, limiteMinY: 100, limiteMaxY: 3000, spawnX: 600, spawnY: 800,
+                imagenFicha: "{{ url_for('static', filename='ficha_sociales.jpg') }}"
+            },
+            {
+                id: "educacion_inicial", nombre: "Carrera Educación Inicial",
+                xPorcentaje: 86, yPorcentaje: 30, radius: 250,
+                interiorImgSrc: "{{ url_for('static', filename='educacion_inicial.jpg') }}",
+                escalaInterior: 1.5, limiteMinX: 50, limiteMaxX: 3000, limiteMinY: 100, limiteMaxY: 3000, spawnX: 600, spawnY: 800,
+                imagenFicha: "{{ url_for('static', filename='ficha_educacion.jpg') }}"
+            },
+            {
+                id: "servicios_generales", nombre: "Servicios Generales",
+                xPorcentaje: 72, yPorcentaje: 55, radius: 250,
+                interiorImgSrc: "{{ url_for('static', filename='servicios_generales.jpg') }}",
+                escalaInterior: 1.5, limiteMinX: 50, limiteMaxX: 3000, limiteMinY: 100, limiteMaxY: 3000, spawnX: 600, spawnY: 800,
+                imagenFicha: "{{ url_for('static', filename='ficha_servicios.jpg') }}"
+            },
+            {
+                id: "fiq", nombre: "Facultad de Ing. Química (FIQ)",
+                xPorcentaje: 10, yPorcentaje: 5, radius: 250,
+                interiorImgSrc: "{{ url_for('static', filename='fiq.jpg') }}",
+                escalaInterior: 1.5, limiteMinX: 50, limiteMaxX: 3000, limiteMinY: 100, limiteMaxY: 3000, spawnX: 600, spawnY: 800,
+                imagenFicha: "{{ url_for('static', filename='ficha_quimica.jpg') }}"
+            },
+            {
+                id: "mecatronica", nombre: "Facultad de Mecatrónica",
+                xPorcentaje: 10, yPorcentaje: 12, radius: 250,
+                interiorImgSrc: "{{ url_for('static', filename='mecatronica.jpg') }}",
+                escalaInterior: 1.5, limiteMinX: 50, limiteMaxX: 3000, limiteMinY: 100, limiteMaxY: 3000, spawnX: 600, spawnY: 800,
+                imagenFicha: "{{ url_for('static', filename='ficha_mecatronica.jpg') }}"
+            },
+            {
+                id: "psicologia", nombre: "Facultad Ciencias Psicológicas",
+                xPorcentaje: 18, yPorcentaje: 20, radius: 250,
+                interiorImgSrc: "{{ url_for('static', filename='psicologia.jpg') }}",
+                escalaInterior: 1.5, limiteMinX: 50, limiteMaxX: 3000, limiteMinY: 100, limiteMaxY: 3000, spawnX: 600, spawnY: 800,
+                imagenFicha: "{{ url_for('static', filename='ficha_psicologia.jpg') }}"
+            },
+            {
+                id: "comunicacion", nombre: "Facultad de Comunicación Social",
+                xPorcentaje: 28, yPorcentaje: 30, radius: 250,
+                interiorImgSrc: "{{ url_for('static', filename='comunicacion.jpg') }}",
+                escalaInterior: 1.5, limiteMinX: 50, limiteMaxX: 3000, limiteMinY: 100, limiteMaxY: 3000, spawnX: 600, spawnY: 800,
+                imagenFicha: "{{ url_for('static', filename='ficha_comunicacion.jpg') }}"
+            },
+            {
+                id: "veterinaria", nombre: "Medicina Veterinaria y Zootecnia",
+                xPorcentaje: 40, yPorcentaje: 15, radius: 250,
+                interiorImgSrc: "{{ url_for('static', filename='veterinaria.jpg') }}",
+                escalaInterior: 1.5, limiteMinX: 50, limiteMaxX: 3000, limiteMinY: 100, limiteMaxY: 3000, spawnX: 600, spawnY: 800,
+                imagenFicha: "{{ url_for('static', filename='ficha_veterinaria.jpg') }}"
+            },
+            {
+                id: "biologia", nombre: "Centro de Biología",
+                xPorcentaje: 50, yPorcentaje: 18, radius: 250,
+                interiorImgSrc: "{{ url_for('static', filename='biologia.jpg') }}",
+                escalaInterior: 1.5, limiteMinX: 50, limiteMaxX: 3000, limiteMinY: 100, limiteMaxY: 3000, spawnX: 600, spawnY: 800,
+                imagenFicha: "{{ url_for('static', filename='ficha_biologia.jpg') }}"
+            },
+            {
+                id: "biblioteca", nombre: "Biblioteca General",
+                xPorcentaje: 50, yPorcentaje: 30, radius: 250,
+                interiorImgSrc: "{{ url_for('static', filename='biblioteca.jpg') }}",
+                escalaInterior: 1.5, limiteMinX: 50, limiteMaxX: 3000, limiteMinY: 100, limiteMaxY: 3000, spawnX: 600, spawnY: 800,
+                imagenFicha: "{{ url_for('static', filename='ficha_biblioteca.jpg') }}"
+            },
+            {
+                id: "ciencias", nombre: "Facultad de Ciencias",
+                xPorcentaje: 45, yPorcentaje: 38, radius: 250,
+                interiorImgSrc: "{{ url_for('static', filename='ciencias.jpg') }}",
+                escalaInterior: 1.5, limiteMinX: 50, limiteMaxX: 3000, limiteMinY: 100, limiteMaxY: 3000, spawnX: 600, spawnY: 800,
+                imagenFicha: "{{ url_for('static', filename='ficha_ciencias.jpg') }}"
+            },
+            {
+                id: "quimicas", nombre: "Facultad de Ciencias Químicas",
+                xPorcentaje: 65, yPorcentaje: 25, radius: 250,
+                interiorImgSrc: "{{ url_for('static', filename='quimicas.jpg') }}",
+                escalaInterior: 1.5, limiteMinX: 50, limiteMaxX: 3000, limiteMinY: 100, limiteMaxY: 3000, spawnX: 600, spawnY: 800,
+                imagenFicha: "{{ url_for('static', filename='ficha_quimicas.jpg') }}"
+            },
+            {
+                id: "arquitectura", nombre: "Facultad Arquitectura y Urbanismo",
+                xPorcentaje: 45, yPorcentaje: 50, radius: 250,
+                interiorImgSrc: "{{ url_for('static', filename='arquitectura.jpg') }}",
+                escalaInterior: 1.5, limiteMinX: 50, limiteMaxX: 3000, limiteMinY: 100, limiteMaxY: 3000, spawnX: 600, spawnY: 800,
+                imagenFicha: "{{ url_for('static', filename='ficha_arquitectura.jpg') }}"
+            },
+            {
+                id: "ingenieria", nombre: "Ingeniería y Ciencias Aplicadas",
+                xPorcentaje: 70, yPorcentaje: 35, radius: 250,
+                interiorImgSrc: "{{ url_for('static', filename='ingenieria.jpg') }}",
+                escalaInterior: 1.5, limiteMinX: 50, limiteMaxX: 3000, limiteMinY: 100, limiteMaxY: 3000, spawnX: 600, spawnY: 800,
+                imagenFicha: "{{ url_for('static', filename='ficha_ingenieria.jpg') }}"
+            },
+            {
+                id: "economia", nombre: "Facultad de Economía",
+                xPorcentaje: 65, yPorcentaje: 68, radius: 250,
+                interiorImgSrc: "{{ url_for('static', filename='economia.jpg') }}",
+                escalaInterior: 1.5, limiteMinX: 50, limiteMaxX: 3000, limiteMinY: 100, limiteMaxY: 3000, spawnX: 600, spawnY: 800,
+                imagenFicha: "{{ url_for('static', filename='ficha_economia.jpg') }}"
+            },
+            {
+                id: "odontologia", nombre: "Facultad de Odontología",
+                xPorcentaje: 45, yPorcentaje: 80, radius: 250,
+                interiorImgSrc: "{{ url_for('static', filename='odontologia.jpg') }}",
+                escalaInterior: 1.5, limiteMinX: 50, limiteMaxX: 3000, limiteMinY: 100, limiteMaxY: 3000, spawnX: 600, spawnY: 800,
+                imagenFicha: "{{ url_for('static', filename='ficha_odontologia.jpg') }}"
+            },
+            {
+                id: "teatro", nombre: "Teatro Universitario",
+                xPorcentaje: 70, yPorcentaje: 78, radius: 250,
+                interiorImgSrc: "{{ url_for('static', filename='teatro.jpg') }}",
+                escalaInterior: 1.5, limiteMinX: 50, limiteMaxX: 3000, limiteMinY: 100, limiteMaxY: 3000, spawnX: 600, spawnY: 800,
+                imagenFicha: "{{ url_for('static', filename='ficha_teatro.jpg') }}"
+            },
+            {
+                id: "estadio", nombre: "Estadio Universitario",
+                xPorcentaje: 40, yPorcentaje: 75, radius: 350, 
+                interiorImgSrc: "{{ url_for('static', filename='estadio.jpg') }}",
+                escalaInterior: 1.5, limiteMinX: 50, limiteMaxX: 3000, limiteMinY: 100, limiteMaxY: 3000, spawnX: 600, spawnY: 800,
+                imagenFicha: "{{ url_for('static', filename='ficha_estadio.jpg') }}"
+            },
+            {
+                id: "coliseo", nombre: "Coliseo UCE",
+                xPorcentaje: 20, yPorcentaje: 55, radius: 250,
+                interiorImgSrc: "{{ url_for('static', filename='coliseo.jpg') }}",
+                escalaInterior: 1.5, limiteMinX: 50, limiteMaxX: 3000, limiteMinY: 100, limiteMaxY: 3000, spawnX: 600, spawnY: 800,
+                imagenFicha: "{{ url_for('static', filename='ficha_coliseo.jpg') }}"
+            }
+        ];
+
+        let edificioCercano = null;
+        let interiorActual = null;
+        let imgInteriorActual = new Image();
+
+        const teclas = { w: false, a: false, s: false, d: false, escape: false };
+
+        window.addEventListener('keydown', (e) => {
+            const key = e.key.toLowerCase();
+            if (teclas.hasOwnProperty(key)) teclas[key] = true;
+            if (e.key === 'Escape') cerrarPanel(); 
+            if (key === 'e' && estadoJuego === 'mundo' && edificioCercano) entrarFacultad(edificioCercano);
+            if (key === 'q' && estadoJuego === 'interior') salirFacultad();
+        });
+
+        window.addEventListener('keyup', (e) => {
+            const key = e.key.toLowerCase();
+            if (teclas.hasOwnProperty(key)) teclas[key] = false;
+        });
+
+        function entrarFacultad(edificio) {
+            estadoJuego = 'interior';
+            interiorActual = edificio;
+            imgInteriorActual.src = edificio.interiorImgSrc;
+            memoriaX = jugador.x; memoriaY = jugador.y;
+            jugador.x = edificio.spawnX; jugador.y = edificio.spawnY;
+            
+            document.getElementById('panel-ficha-img').src = edificio.imagenFicha;
+
+            locationText.innerText = edificio.nombre.toUpperCase();
+            controlsText.innerText = "ESC: Cerrar Info | Q: Salir al Campus";
+            infoPanel.style.display = 'block';
+
+            // LÓGICA DE LOGROS
+            let logrosGuardados = JSON.parse(localStorage.getItem('logros_uce')) || [];
+            if (!logrosGuardados.some(logro => logro.id === edificio.id)) {
+                logrosGuardados.push({ id: edificio.id, nombre: edificio.nombre });
+                localStorage.setItem('logros_uce', JSON.stringify(logrosGuardados));
+                
+                const popup = document.getElementById('achievement-popup');
+                document.getElementById('achievement-name').innerText = edificio.nombre;
+                popup.classList.add('show');
+                
+                setTimeout(() => {
+                    popup.classList.remove('show');
+                }, 4000);
+            }
+        }
+
+        function salirFacultad() {
+            estadoJuego = 'mundo'; interiorActual = null;
+            jugador.x = memoriaX; jugador.y = memoriaY;
+            locationText.innerText = "CAMPUS CENTRAL UCE";
+            controlsText.innerText = "W A S D: Moverse";
+            infoPanel.style.display = 'none';
+        }
+
+        function cerrarPanel() { 
+            if(estadoJuego === 'interior') {
+                infoPanel.style.display = 'none'; 
+            }
+        }
+
+        function gameLoop() {
+            let isMoving = teclas.w || teclas.s || teclas.a || teclas.d;
+
+            if (teclas.w) jugador.y -= jugador.velocidad; 
+            if (teclas.s) jugador.y += jugador.velocidad; 
+            if (teclas.a) { jugador.x -= jugador.velocidad; mirandoIzquierda = true; } 
+            if (teclas.d) { jugador.x += jugador.velocidad; mirandoIzquierda = false; } 
+
+            let mapWidth, mapHeight;
+
+            if (estadoJuego === 'mundo') {
+                mapWidth = (mapaGiganteImg.width || canvas.width) * 1.6;
+                mapHeight = (mapaGiganteImg.height || canvas.height) * 1.6;
+
+                if (jugador.x < 0) jugador.x = 0;
+                if (jugador.y < 0) jugador.y = 0;
+                if (jugador.x > mapWidth - jugador.width) jugador.x = mapWidth - jugador.width;
+                if (jugador.y > mapHeight - jugador.height) jugador.y = mapHeight - jugador.height;
+
+                edificioCercano = null;
+                for (let edif of edificios) {
+                    let cX = (mapWidth * edif.xPorcentaje) / 100;
+                    let cY = (mapHeight * edif.yPorcentaje) / 100;
+                    if (Math.sqrt((jugador.x + jugador.width/2 - cX)**2 + (jugador.y + jugador.height/2 - cY)**2) < edif.radius) {
+                        edificioCercano = edif; break;
+                    }
+                }
+            } else if (estadoJuego === 'interior' && interiorActual) {
+                let imgW = imgInteriorActual.width || canvas.width;
+                let imgH = imgInteriorActual.height || canvas.height;
+                
+                let scaleW = canvas.width / imgW;
+                let scaleH = canvas.height / imgH;
+                let baseScale = interiorActual.escalaInterior || 1.5;
+                
+                let finalScale = Math.max(scaleW, scaleH, baseScale);
+
+                mapWidth = imgW * finalScale;
+                mapHeight = imgH * finalScale;
+
+                let limiteRealX = Math.min(interiorActual.limiteMaxX, mapWidth - jugador.width);
+                let limiteRealY = Math.min(interiorActual.limiteMaxY, mapHeight - jugador.height);
+
+                if (jugador.x < interiorActual.limiteMinX) jugador.x = interiorActual.limiteMinX;
+                if (jugador.x > limiteRealX) jugador.x = limiteRealX;
+                if (jugador.y < interiorActual.limiteMinY) jugador.y = interiorActual.limiteMinY;
+                if (jugador.y > limiteRealY) jugador.y = limiteRealY;
+            }
+
+            let cameraX = Math.max(0, Math.min((jugador.x + jugador.width/2) - canvas.width/2, mapWidth - canvas.width));
+            let cameraY = Math.max(0, Math.min((jugador.y + jugador.height/2) - canvas.height/2, mapHeight - canvas.height));
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height); 
+            
+            if (estadoJuego === 'mundo') {
+                ctx.drawImage(mapaGiganteImg, -cameraX, -cameraY, mapWidth, mapHeight);
+            } else {
+                ctx.drawImage(imgInteriorActual, -cameraX, -cameraY, mapWidth, mapHeight);
+            }
+
+            // ANIMACIÓN IDLE
+            let idleOffset = isMoving ? 0 : Math.sin(Date.now() / 300) * 2.5;
+
+            ctx.save();
+            let dX = jugador.x - cameraX;
+            let dY = jugador.y - cameraY + idleOffset; 
+
+            if (mirandoIzquierda) { 
+                ctx.scale(-1, 1); 
+                dX = -dX - jugador.width; 
+            }
+            
+            ctx.drawImage(avatarImg, dX, dY, jugador.width, jugador.height);
+            ctx.restore();
+
+            // --- DIBUJAR Y ACTUALIZAR PARTÍCULAS AMBIENTALES ---
+            for (let p of particulas) {
+                p.y -= p.velY;
+                p.x += p.velX;
+
+                if (p.y < 0) {
+                    p.y = canvas.height;
+                    p.x = Math.random() * canvas.width;
+                }
+                if (p.x < 0) p.x = canvas.width;
+                if (p.x > canvas.width) p.x = 0;
+
+                ctx.fillStyle = `rgba(255, 255, 255, ${p.opacidad})`;
+                ctx.fillRect(p.x, p.y, p.tamano, p.tamano);
+            }
+
+            promptUI.style.display = (estadoJuego === 'mundo' && edificioCercano) ? 'block' : 'none';
+            if (edificioCercano) {
+                promptUI.innerText = `¡Estás cerca de ${edificioCercano.nombre}! Presiona E para entrar`;
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+        
+        gameLoop();
+        
+        window.addEventListener('resize', () => { 
+            canvas.width = window.innerWidth; 
+            canvas.height = window.innerHeight; 
+        });
+    </script>
+</body>
+</html>
